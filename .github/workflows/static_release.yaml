@@ -474,7 +474,7 @@ jobs:
 
     #continuous
       - name: Releaser
-        uses: softprops/action-gh-release@v2.2.1
+        uses: softprops/action-gh-release@v2.3.2
         with:
           name: "soar-@latest"
           tag_name: "continuous"
@@ -488,7 +488,7 @@ jobs:
 
     #Snapshot
       - name: Releaser
-        uses: softprops/action-gh-release@v2.2.1
+        uses: softprops/action-gh-release@v2.3.2
         with:
           name: "ARTIFACTS_${{ env.L_COMMIT }}"
           tag_name: "${{ env.UTC_TIME }}"
