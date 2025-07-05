@@ -1,0 +1,159 @@
+name: 🐧🧹 HealthChecks 🖳🗑️
+#MAX_RUNTIME: 02 Minutes */10 * * * * 
+
+on:
+  #push:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */2 * * *" #Every 2 Hrs
+#------------------------------------------------------------------------------------#
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: main
+          filter: "blob:none"
+          
+      - name: Install Addons
+        run: |
+          #presets
+          set +x ; set +e
+          #-------------#
+          bash <(curl -qfsSL "https://raw.githubusercontent.com/pkgforge/devscripts/refs/heads/main/Linux/install_bins_curl.sh")
+          
+        continue-on-error: true
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        continue-on-error: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        continue-on-error: true
+
+      - name: Setup Env
+        run: |
+          #Presets
+          set +x ; set +e
+          #--------------#
+          #tmp
+          SYSTMP="$(dirname $(mktemp -u))" && export SYSTMP="${SYSTMP}"
+          echo "SYSTMP=${SYSTMP}" >> "$GITHUB_ENV"
+          #GH
+          rm -rvf "${GITHUB_WORKSPACE}/main/.github/SOAR_TESTS" 2>/dev/null
+          mkdir -pv "${GITHUB_WORKSPACE}/main/.github/SOAR_TESTS"
+          pushd "$(mktemp -d)" &>/dev/null
+           curl -qfsSL "https://raw.githubusercontent.com/Azathothas/soar/refs/heads/main/.github/dockerfiles/soar_vhs.Dockerfile" -o "./Dockerfile"
+           docker build --no-cache --tag "soar-vhs" --file "./Dockerfile" "." ; sleep 3
+           if docker inspect "soar-vhs" &>/dev/null 2>&1; then
+             echo "CONTINUE_GHRUN=TRUE" >> "${GITHUB_ENV}"
+           else
+             echo "CONTINUE_GHRUN=FALSE" >> "${GITHUB_ENV}"
+           fi
+          popd &>/dev/null
+          #-------------#
+          ##User-Agent
+          USER_AGENT="$(curl -qfsSL 'https://pub.ajam.dev/repos/Azathothas/Wordlists/Misc/User-Agents/ua_chrome_macos_latest.txt')" && export USER_AGENT="${USER_AGENT}"
+          echo "USER_AGENT=${USER_AGENT}" >> "${GITHUB_ENV}"
+        continue-on-error: true
+
+      - name: Run soar-vhs
+        if: env.CONTINUE_GHRUN != 'FALSE'
+        run: |
+          #presets
+          set +x ; set +e
+          #-------------#
+          if docker inspect "soar-vhs" &>/dev/null; then
+            docker inspect "soar-vhs"
+            docker stop "soar-vhs" 2>/dev/null ; docker rm "soar-vhs"
+            sudo docker run --name "soar-vhs" --detach --privileged --rm -v "${GITHUB_WORKSPACE}/main/.github/SOAR_TESTS:/SOAR_TESTS" --hostname "Qaid" -u "soar" "soar-vhs" tail -f "/dev/null" || docker run --name "soar-vhs" --detach --privileged --rm -v "${GITHUB_WORKSPACE}/main/.github/SOAR_TESTS:/SOAR_TESTS" --hostname "Qaid" -u "soar" "soar-vhs" tail -f "/dev/null"
+          else
+            echo "CONTINUE_GHRUN=FALSE" >> "${GITHUB_ENV}"
+          fi
+        continue-on-error: true
+
+      - name: Version (soar --version)
+        if: env.CONTINUE_GHRUN != 'FALSE'
+        run: |
+          #presets
+          set +x ; set +e
+          #-------------#
+          sudo docker exec -u "soar" "soar-vhs" bash -l -c '
+          set +e ; set -x
+          mkdir -pv "/soar" ; cd "/soar"
+          sudo chown -R "$(whoami):$(whoami)" "/SOAR_TESTS"
+          sudo chmod -R 755 "/SOAR_TESTS"
+          curl -qfsSL "https://raw.githubusercontent.com/Azathothas/soar/refs/heads/main/.github/vhs/version.tape" -o "/soar/version.tape"
+          vhs "/soar/version.tape" --output "/SOAR_TESTS/version.gif"
+          '
+          sudo chown -R "$(whoami):$(whoami)" "${GITHUB_WORKSPACE}/main/.github"
+          sudo chmod -R 755 "${GITHUB_WORKSPACE}/main/.github"
+          file "${GITHUB_WORKSPACE}/main/.github/SOAR_TESTS/version.gif"
+        continue-on-error: true
+
+      - name: List (soar list)
+        if: env.CONTINUE_GHRUN != 'FALSE'
+        run: |
+          #presets
+          set +x ; set +e
+          #-------------#
+          sudo docker exec -u "soar" "soar-vhs" bash -l -c '
+          set +e ; set -x
+          mkdir -pv "/soar" ; cd "/soar"
+          sudo chown -R "$(whoami):$(whoami)" "/SOAR_TESTS"
+          sudo chmod -R 755 "/SOAR_TESTS"
+          curl -qfsSL "https://raw.githubusercontent.com/Azathothas/soar/refs/heads/main/.github/vhs/list.tape" -o "/soar/list.tape"
+          PATH="${HOME}/.local/share/soar/bin:${PATH}"
+          soar defconfig --external || soar defconfig || true
+          soar sync
+          vhs "/soar/list.tape" --output "/SOAR_TESTS/list.gif"
+          '
+          sudo chown -R "$(whoami):$(whoami)" "${GITHUB_WORKSPACE}/main/.github"
+          sudo chmod -R 755 "${GITHUB_WORKSPACE}/main/.github"
+          file "${GITHUB_WORKSPACE}/main/.github/SOAR_TESTS/list.gif"
+        continue-on-error: true
+
+      - name: List (soar list_detailed)
+        if: env.CONTINUE_GHRUN != 'FALSE'
+        run: |
+          #presets
+          set +x ; set +e
+          #-------------#
+          sudo docker exec -u "soar" "soar-vhs" bash -l -c '
+          set +e ; set -x
+          mkdir -pv "/soar" ; cd "/soar"
+          sudo chown -R "$(whoami):$(whoami)" "/SOAR_TESTS"
+          sudo chmod -R 755 "/SOAR_TESTS"
+          curl -qfsSL "https://raw.githubusercontent.com/Azathothas/soar/refs/heads/main/.github/vhs/list_detailed.tape" -o "/soar/list_detailed.tape"
+          PATH="${HOME}/.local/share/soar/bin:${PATH}"
+          soar defconfig --external || soar defconfig || true
+          soar sync
+          vhs "/soar/list_detailed.tape" --output "/SOAR_TESTS/list_detailed.gif"
+          '
+          sudo chown -R "$(whoami):$(whoami)" "${GITHUB_WORKSPACE}/main/.github"
+          sudo chmod -R 755 "${GITHUB_WORKSPACE}/main/.github"
+          file "${GITHUB_WORKSPACE}/main/.github/SOAR_TESTS/list_detailed.gif"
+        continue-on-error: true
+
+      - name: Git Pull
+        if: env.CONTINUE_GHRUN != 'FALSE'
+        run: |
+          cd "${GITHUB_WORKSPACE}/main" && git pull origin main
+        continue-on-error: true
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        if: env.CONTINUE_GHRUN != 'FALSE'
+        with:
+          repository: ./main        
+          commit_user_name: Azathothas
+          commit_user_email: AjamX101@gmail.com
+          commit_message: "‎‎‏‏‎ ‎"
+          #push_options: '--force'
+        continue-on-error: true

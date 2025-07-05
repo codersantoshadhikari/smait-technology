@@ -1,0 +1,503 @@
+name: 🛍️ soar 📦 (aarch64 || x86_64) Linux Build 📦🗄️
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */1 * * *" #@every 1hrs
+#env:
+  #SKIP_X86_64: "NO" #YES--> SKip x86_64-Linux Build
+  #SKIP_AARCH64: "NO" #YES--> SKip aarch64-Linux Build
+#------------------------------------------------------------------------------------#
+jobs:
+    sync-upstream:
+      name: Sync Upstream
+      runs-on: ubuntu-latest
+      permissions: 
+        contents: write
+      outputs:
+        SKIP_X86_64: ${{ steps.set-outputs.outputs.SKIP_X86_64 }}
+        SKIP_AARCH64: ${{ steps.set-outputs.outputs.SKIP_AARCH64 }}
+
+      steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: main
+          filter: "blob:none"
+
+      - name: Setup Env
+        run: |
+          #Presets
+          set +x ; set +e
+          #--------------#
+          ##Install coreutils
+          sudo apt-get update -y -qq && sudo apt-get install curl coreutils dos2unix file findutils gawk git jq moreutils rsync tar xz-utils util-linux wget zip -y -qq
+          ##Install Addons
+          #https://github.com/pkgforge/devscripts/blob/main/Linux/install_bins_curl.sh
+          bash <(curl -qfsSL "https://raw.githubusercontent.com/pkgforge/devscripts/refs/heads/main/Linux/install_bins_curl.sh")
+          ##Create Output Dir
+          mkdir -p "${GITHUB_WORKSPACE}/main"
+        continue-on-error: true
+
+      - name: Sync "${GITHUB_WORKSPACE}/main" <-- "(https://github.com/pkgforge/soar)"
+        id: set-outputs
+        run: |
+          #Presets
+          set +x ; set +e
+          #--------------#
+          ##Main
+          pushd "$(mktemp -d)" >/dev/null 2>&1 && git clone --filter="blob:none" --quiet "https://github.com/pkgforge/soar" && cd "./soar"
+          LATEST_COMMIT="$(git rev-parse HEAD | tr -d "[:space:]")" && export LATEST_COMMIT="${LATEST_COMMIT}"
+          LATEST_COMMI_M="$(git log -1 --pretty="%B" | head -n 1)" && export LATEST_COMMIT="${LATEST_COMMIT}"
+          echo "LATEST_COMMI_M=${LATEST_COMMI_M}" >> "${GITHUB_ENV}"
+          PREV_COMMIT="$(cat "${GITHUB_WORKSPACE}/main/.github/LATEST.txt" 2>/dev/null)" && export PREV_COMMIT="${PREV_COMMIT}"
+          if [ "${LATEST_COMMIT}" == "${PREV_COMMIT}" ]; then
+            #Skip Build
+             export SKIP_X86_64="YES"
+             echo "SKIP_X86_64=${SKIP_X86_64}" >> "${GITHUB_ENV}"
+             echo "SKIP_X86_64=${SKIP_X86_64}" >> "${GITHUB_OUTPUT}"
+             export SKIP_AARCH64="YES"
+             echo "SKIP_AARCH64=${SKIP_AARCH64}" >> "${GITHUB_ENV}"
+             echo "SKIP_AARCH64=${SKIP_AARCH64}" >> "${GITHUB_OUTPUT}"
+          else
+            #Sync Repo
+             echo "${LATEST_COMMIT}" > "${GITHUB_WORKSPACE}/main/.github/LATEST.txt"
+             sed '/^$/d' -i "${GITHUB_WORKSPACE}/main/.github/LATEST.txt"
+             rm -rfv "./.git/" "./.githooks/" "./.github/" 2>/dev/null
+             rsync -achLv --remove-source-files --exclude="./.git/**" --exclude="./.github/**" "./" "${GITHUB_WORKSPACE}/main/"
+            #Trigger Build
+             export SKIP_X86_64="NO"
+             echo "SKIP_X86_64=${SKIP_X86_64}" >> "${GITHUB_ENV}"
+             echo "SKIP_X86_64=${SKIP_X86_64}" >> "${GITHUB_OUTPUT}"
+             export SKIP_AARCH64="NO"
+             echo "SKIP_AARCH64=${SKIP_AARCH64}" >> "${GITHUB_ENV}"
+             echo "SKIP_AARCH64=${SKIP_AARCH64}" >> "${GITHUB_OUTPUT}"
+          fi
+          popd >/dev/null 2>&1
+        continue-on-error: true
+
+      - name: Get DateTime
+        run: |
+          #Presets
+          set +x ; set +e
+          #--------------#
+          NEPALI_TIME="$(TZ='Asia/Kathmandu' date +'%Y-%m-%d (%I:%M:%S %p)')"
+          echo "NEPALI_TIME=${NEPALI_TIME}" >> "${GITHUB_ENV}"
+        continue-on-error: true
+        
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          repository: ./main
+          commit_user_name: Azathothas
+          commit_user_email: AjamX101@gmail.com
+          commit_message: "♻️ Synced Soar 📦 <-- ${{ env.LATEST_COMMI_M }} ⌚"
+#------------------------------------------------------------------------------------#
+    build-x86_64-Linux:
+      if: needs.sync-upstream.outputs.SKIP_X86_64 == 'NO'
+      name: Build On (x86_64-Linux)
+      runs-on: ubuntu-latest
+      needs: [sync-upstream]
+      permissions:
+        contents: read
+      
+      steps:
+        - name: Checkout repository
+          uses: actions/checkout@v4
+          with:
+            path: main
+            filter: "blob:none"
+            
+        - name: Install CoreUtils & Deps
+          run: |
+            #presets
+            set -x ; set +e
+            #-------------#
+            export DEBIAN_FRONTEND="noninteractive"
+            sudo apt update -y -qq
+            sudo apt install 7zip b3sum bc binutils binutils-aarch64-linux-gnu coreutils curl dos2unix fdupes jq moreutils wget -y -qq
+            sudo apt-get install apt-transport-https apt-utils ca-certificates binutils binutils-aarch64-linux-gnu coreutils dos2unix fdupes gnupg2 jq moreutils p7zip-full rename rsync software-properties-common texinfo tmux upx util-linux wget -y -qq 2>/dev/null ; sudo apt-get update -y 2>/dev/null
+            #Do again, sometimes fails
+            sudo apt install 7zip b3sum bc binutils binutils-aarch64-linux-gnu coreutils curl dos2unix fdupes jq moreutils wget -y -qq
+            sudo apt-get install apt-transport-https apt-utils ca-certificates binutils binutils-aarch64-linux-gnu coreutils dos2unix fdupes gnupg2 jq moreutils p7zip-full rename rsync software-properties-common texinfo tmux upx util-linux wget -y -qq2>/dev/null ; sudo apt-get update -y 2>/dev/null
+          continue-on-error: true
+
+        - name: Setup Env
+          run: |
+            #presets
+            set -x ; set +e
+            #-------------#
+            ##tmp
+            SYSTMP="$(dirname $(mktemp -u))" && export SYSTMP="${SYSTMP}"
+            echo "SYSTMP=${SYSTMP}" >> "${GITHUB_ENV}"
+            ##Artifacts
+            ARTIFACTS="${SYSTMP}/ARTIFACTS-$(uname -m)-$(uname -s)" && export "ARTIFACTS=${ARTIFACTS}"
+            echo "ARTIFACTS=${ARTIFACTS}" >> "${GITHUB_ENV}"
+            ##User-Agent
+            USER_AGENT="$(curl -qfsSL 'https://raw.githubusercontent.com/pkgforge/devscripts/refs/heads/main/Misc/User-Agents/ua_chrome_macos_latest.txt')" && export USER_AGENT="${USER_AGENT}"
+            echo "USER_AGENT=${USER_AGENT}" >> "${GITHUB_ENV}"
+            ##Prep
+            cd "$GITHUB_WORKSPACE/main"
+            find "$GITHUB_WORKSPACE/main" -type f ! -path "./.git/*" -exec dos2unix {} \; 2>/dev/null
+            find "$GITHUB_WORKSPACE/main" -type f ! -path "./.git/*" -name '*.sh' -exec shellcheck --severity=error {} \; 2>/dev/null | tee "$GITHUB_WORKSPACE/main/.github/shellcheck.txt"
+          continue-on-error: true
+
+        - name: Install Addons
+          run: |
+            # Presets
+            set +x ; set +e
+            #--------------#
+            #https://github.com/pkgforge/devscripts/blob/main/Linux/install_bins_curl.sh
+            bash <(curl -qfsSL "https://raw.githubusercontent.com/pkgforge/devscripts/refs/heads/main/Linux/install_bins_curl.sh")
+          continue-on-error: true
+  
+        - name: Set up QEMU
+          uses: docker/setup-qemu-action@v3
+          continue-on-error: true
+        - name: Set up Docker Buildx
+          uses: docker/setup-buildx-action@v3
+          continue-on-error: true
+
+        - name: Build Binaries (x86_64-Linux)
+          env:
+            GITHUB_TOKEN: "${{ github.token }}"
+          run: |
+            #presets
+            set -x ; set +e
+            #-------------#
+            #Build 
+            pushd "$(mktemp -d)" >/dev/null 2>&1
+            docker stop "alpine-builder" 2>/dev/null ; docker rm "alpine-builder" 2>/dev/null
+            docker run --platform="linux/amd64" --privileged --net="host" --name "alpine-builder" -e GITHUB_TOKEN="${GITHUB_TOKEN}" --pull="always" "ghcr.io/pkgforge/devscripts/alpine-builder:latest" \
+             bash -l -c '
+             #Setup ENV
+              mkdir -p "/build-bins" && pushd "$(mktemp -d)" >/dev/null 2>&1
+              source "${HOME}/.cargo/env"
+              rustup default nightly
+              rustup component add rust-src --toolchain nightly
+              export RUST_TARGET="x86_64-unknown-linux-musl"
+              rustup target add "${RUST_TARGET}"
+              export RUSTFLAGS="-C target-feature=+crt-static -C default-linker-libraries=yes -C link-self-contained=yes -C prefer-dynamic=no -C embed-bitcode=yes -C lto=yes -C opt-level=z -C debuginfo=none -C strip=symbols -C linker=clang -C link-arg=-fuse-ld=$(which mold) -C link-arg=-Wl,--Bstatic -C link-arg=-Wl,--static -C link-arg=-Wl,-S -C link-arg=-Wl,--build-id=none"
+             #Build
+              git clone --filter "blob:none" --quiet "https://github.com/pkgforge/soar" && cd "./soar"
+              echo -e "\n[+] Target: ${RUST_TARGET}\n"
+              echo -e "\n[+] Flags: ${RUSTFLAGS}\n"
+              sed "/^\[profile\.release\]/,/^$/d" -i "./Cargo.toml" ; echo -e "\n[profile.release]\nstrip = true\nopt-level = 3\nlto = true" >> "./Cargo.toml"
+              rm rust-toolchain* 2>/dev/null
+              cargo build --target "${RUST_TARGET}" --release --jobs="$(($(nproc)+1))" --keep-going
+             #Copy 
+              find "./target/${RUST_TARGET}/release" -maxdepth 1 -type f -exec file -i "{}" \; | grep "application/.*executable" | cut -d":" -f1 | xargs realpath | xargs -I {} rsync -achvL "{}" "/build-bins/"
+             #Strip 
+              find "/build-bins/" -type f -exec objcopy --remove-section=".comment" --remove-section=".note.*" "{}" \;
+              find "/build-bins/" -type f ! -name "*.no_strip" -exec strip --strip-debug --strip-dwo --strip-unneeded --preserve-dates "{}" \; 2>/dev/null
+             #Rename 
+              find "/build-bins/" -type f ! -name "*.txt" -exec  bash -c '\''mv "$0" "${0}-x86_64-Linux"'\'' {} \; 2>/dev/null
+             #UPX 
+              find "/build-bins/" -type f | xargs realpath | xargs -I {} upx --best "{}" -f --force-overwrite -o"{}.upx" -qq 2>/dev/null
+              popd >/dev/null 2>&1
+            '
+            #Copy
+            sudo docker cp "alpine-builder:/build-bins/." "$(pwd)/"
+            find "." -maxdepth 1 -type f -exec sh -c 'file "{}"; du -sh "{}"' \;
+            sudo rsync -av --copy-links --exclude="*/" "./." "${ARTIFACTS}/"
+            sudo chown -R "$(whoami):$(whoami)" "${ARTIFACTS}" && chmod -R 755 "${ARTIFACTS}"
+            #End
+            sudo docker stop "alpine-builder" 2>/dev/null ; sudo docker rm "alpine-builder" 2>/dev/null
+            popd >/dev/null 2>&1
+          continue-on-error: true
+  
+        - name: Archive Binaries (.tar)
+          run: |
+            #presets
+            set -x ; set +e
+            #-------------#
+            if [ -d "${ARTIFACTS}" ] && [ "$(find "${ARTIFACTS}" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+               7z a -ttar -mx="9" -mmt="$(($(nproc)+1))" -bt "${ARTIFACTS}.tar" "${ARTIFACTS}" 2>/dev/null
+               sha256sum "${ARTIFACTS}.tar" && du -sh "${ARTIFACTS}.tar"
+               export HAS_RELEASE="TRUE"
+               echo "HAS_RELEASE=${HAS_RELEASE}" >> "${GITHUB_ENV}"
+            else
+               export HAS_RELEASE="FALSE"
+               echo "HAS_RELEASE=${HAS_RELEASE}" >> "${GITHUB_ENV}"
+                 exit 1
+              fi
+          continue-on-error: false
+  
+        - name: Upload_ARTIFACTS-x86_64-Linux
+          uses: actions/upload-artifact@v4
+          with:
+              name: ARTIFACTS-x86_64-Linux.tar
+              path: |
+                /tmp/ARTIFACTS-x86_64-Linux.tar
+#------------------------------------------------------------------------------------#
+    build-aarch64-Linux:
+        if: needs.sync-upstream.outputs.SKIP_AARCH64 == 'NO'
+        name: Build On (aarch64-Linux)
+        runs-on: ubuntu-24.04-arm
+        needs: [sync-upstream]
+        permissions:
+          contents: read
+
+        steps:
+          - name: Checkout repository
+            uses: actions/checkout@v4
+            with:
+              path: main
+              filter: "blob:none"
+    
+          - name: Install CoreUtils & Deps
+            run: |
+              #presets
+              set -x ; set +e
+              #-------------#     
+              export DEBIAN_FRONTEND="noninteractive"
+              sudo apt update -y -qq
+              sudo apt install 7zip b3sum bc binutils binutils-aarch64-linux-gnu coreutils curl dos2unix fdupes jq moreutils wget -y -qq
+              sudo apt-get install apt-transport-https apt-utils ca-certificates binutils binutils-aarch64-linux-gnu coreutils dos2unix fdupes gnupg2 jq moreutils p7zip-full rename rsync software-properties-common texinfo tmux upx util-linux wget -y -qq 2>/dev/null ; sudo apt-get update -y 2>/dev/null
+              #Do again, sometimes fails
+              sudo apt install 7zip b3sum bc binutils binutils-aarch64-linux-gnu coreutils curl dos2unix fdupes jq moreutils wget -y -qq
+              sudo apt-get install apt-transport-https apt-utils ca-certificates binutils binutils-aarch64-linux-gnu coreutils dos2unix fdupes gnupg2 jq moreutils p7zip-full rename rsync software-properties-common texinfo tmux upx util-linux wget -y -qq 2>/dev/null ; sudo apt-get update -y 2>/dev/null
+            continue-on-error: true
+
+          - name: Setup Env
+            run: |
+              #presets
+              set -x ; set +e
+              #-------------#
+              ##tmp
+              SYSTMP="$(dirname $(mktemp -u))" && export SYSTMP="${SYSTMP}"
+              echo "SYSTMP=${SYSTMP}" >> "${GITHUB_ENV}"
+              ##Artifacts
+              #ARTIFACTS="${SYSTMP}/ARTIFACTS-$(uname -m)-$(uname -s)" && export "ARTIFACTS=${ARTIFACTS}"
+              ARTIFACTS="${SYSTMP}/ARTIFACTS-aarch64-Linux" && export "ARTIFACTS=${ARTIFACTS}"
+              echo "ARTIFACTS=${ARTIFACTS}" >> "${GITHUB_ENV}"          
+              ##User-Agent
+              USER_AGENT="$(curl -qfsSL 'https://raw.githubusercontent.com/pkgforge/devscripts/refs/heads/main/Misc/User-Agents/ua_chrome_macos_latest.txt')" && export USER_AGENT="${USER_AGENT}"
+              echo "USER_AGENT=${USER_AGENT}" >> "${GITHUB_ENV}"
+            continue-on-error: true
+
+          - name: Install Addons
+            run: |
+              # Presets
+              set +x ; set +e
+              #--------------#
+              #https://github.com/pkgforge/devscripts/blob/main/Linux/install_bins_curl.sh
+              bash <(curl -qfsSL "https://raw.githubusercontent.com/pkgforge/devscripts/refs/heads/main/Linux/install_bins_curl.sh")
+            continue-on-error: true
+
+          - name: Set up QEMU
+            uses: docker/setup-qemu-action@v3
+            continue-on-error: true
+          - name: Set up Docker Buildx
+            uses: docker/setup-buildx-action@v3
+            continue-on-error: true
+
+          - name: Build Binaries (aarch64-Linux)
+            env:
+              GITHUB_TOKEN: "${{ github.token }}"
+            run: |
+              #presets
+              set -x ; set +e
+              #-------------#
+              #Build 
+              pushd "$(mktemp -d)" >/dev/null 2>&1
+              docker stop "alpine-builder" 2>/dev/null ; docker rm "alpine-builder" 2>/dev/null
+              docker run --platform="linux/arm64" --privileged --net="host" --name "alpine-builder" -e GITHUB_TOKEN="${GITHUB_TOKEN}" --pull="always" "ghcr.io/pkgforge/devscripts/alpine-builder:latest" \
+               bash -l -c '
+               #Setup ENV
+                mkdir -p "/build-bins" && pushd "$(mktemp -d)" >/dev/null 2>&1
+                source "${HOME}/.cargo/env"
+                rustup default nightly
+                rustup component add rust-src --toolchain nightly
+                export RUST_TARGET="aarch64-unknown-linux-musl"
+                rustup target add "${RUST_TARGET}"
+                export RUSTFLAGS="-C target-feature=+crt-static -C default-linker-libraries=yes -C link-self-contained=yes -C prefer-dynamic=no -C embed-bitcode=yes -C lto=yes -C opt-level=z -C debuginfo=none -C strip=symbols -C linker=clang -C link-arg=-fuse-ld=$(which mold) -C link-arg=-Wl,--Bstatic -C link-arg=-Wl,--static -C link-arg=-Wl,-S -C link-arg=-Wl,--build-id=none"
+               #Build
+                git clone --filter "blob:none" --quiet "https://github.com/pkgforge/soar" && cd "./soar"
+                echo -e "\n[+] Target: ${RUST_TARGET}\n"
+                echo -e "\n[+] Flags: ${RUSTFLAGS}\n"
+                sed "/^\[profile\.release\]/,/^$/d" -i "./Cargo.toml" ; echo -e "\n[profile.release]\nstrip = true\nopt-level = 3\nlto = true" >> "./Cargo.toml"
+                rm rust-toolchain* 2>/dev/null
+                cargo build --target "${RUST_TARGET}" --release --jobs="$(($(nproc)+1))" --keep-going
+               #Copy 
+                find "./target/${RUST_TARGET}/release" -maxdepth 1 -type f -exec file -i "{}" \; | grep "application/.*executable" | cut -d":" -f1 | xargs realpath | xargs -I {} rsync -achvL "{}" "/build-bins/"
+               #Strip 
+                find "/build-bins/" -type f -exec objcopy --remove-section=".comment" --remove-section=".note.*" "{}" \;
+                find "/build-bins/" -type f ! -name "*.no_strip" -exec strip --strip-debug --strip-dwo --strip-unneeded --preserve-dates "{}" \; 2>/dev/null
+               #Rename 
+                find "/build-bins/" -type f ! -name "*.txt" -exec  bash -c '\''mv "$0" "${0}-aarch64-Linux"'\'' {} \; 2>/dev/null
+               #UPX 
+                find "/build-bins/" -type f | xargs realpath | xargs -I {} upx --best "{}" -f --force-overwrite -o"{}.upx" -qq 2>/dev/null
+                popd >/dev/null 2>&1
+              '
+              #Copy
+              sudo docker cp "alpine-builder:/build-bins/." "$(pwd)/"
+              find "." -maxdepth 1 -type f -exec sh -c 'file "{}"; du -sh "{}"' \;
+              sudo rsync -av --copy-links --exclude="*/" "./." "${ARTIFACTS}/"
+              sudo chown -R "$(whoami):$(whoami)" "${ARTIFACTS}" && chmod -R 755 "${ARTIFACTS}"
+              #End
+              sudo docker stop "alpine-builder" 2>/dev/null ; sudo docker rm "alpine-builder" 2>/dev/null
+              popd >/dev/null 2>&1
+            continue-on-error: true
+
+          - name: Archive Binaries (.tar)
+            run: |
+              #presets
+              set -x ; set +e
+              #-------------#
+              if [ -d "${ARTIFACTS}" ] && [ "$(find "${ARTIFACTS}" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+                 7z a -ttar -mx="9" -mmt="$(($(nproc)+1))" -bt "${ARTIFACTS}.tar" "${ARTIFACTS}" 2>/dev/null
+                 sha256sum "${ARTIFACTS}.tar" && du -sh "${ARTIFACTS}.tar"
+                 export HAS_RELEASE="TRUE"
+                 echo "HAS_RELEASE=${HAS_RELEASE}" >> "${GITHUB_ENV}"
+              else
+                 export HAS_RELEASE="FALSE"
+                 echo "HAS_RELEASE=${HAS_RELEASE}" >> "${GITHUB_ENV}"
+                 exit 1
+              fi
+            continue-on-error: true
+    
+          - name: Upload_ARTIFACTS-aarch64-Linux
+            uses: actions/upload-artifact@v4
+            with:
+                name: ARTIFACTS-aarch64-Linux.tar
+                path: |
+                  /tmp/ARTIFACTS-aarch64-Linux.tar
+#------------------------------------------------------------------------------------#
+    create-release:
+      name: Create ARTIFACTS Release
+      runs-on: ubuntu-latest
+      needs: [build-x86_64-Linux, build-aarch64-Linux]
+      permissions: write-all      
+      steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: main
+          filter: "blob:none"
+
+      - name: Install CoreUtils & Deps
+        run: |
+          #presets
+          set -x ; set +e
+          #-------------#     
+          export DEBIAN_FRONTEND="noninteractive"
+          sudo apt update -y -qq
+          sudo apt install 7zip b3sum bc binutils binutils-aarch64-linux-gnu coreutils curl dos2unix fdupes jq moreutils wget -y -qq
+          sudo apt-get install apt-transport-https apt-utils ca-certificates binutils binutils-aarch64-linux-gnu coreutils dos2unix fdupes gnupg2 jq moreutils p7zip-full rename rsync software-properties-common texinfo tmux upx util-linux wget -y -qq 2>/dev/null ; sudo apt-get update -y 2>/dev/null
+          #Do again, sometimes fails
+          sudo apt install 7zip b3sum bc binutils binutils-aarch64-linux-gnu coreutils curl dos2unix fdupes jq moreutils wget -y -qq
+          sudo apt-get install apt-transport-https apt-utils ca-certificates binutils binutils-aarch64-linux-gnu coreutils dos2unix fdupes gnupg2 jq moreutils p7zip-full rename rsync software-properties-common texinfo tmux upx util-linux wget -y -qq2>/dev/null ; sudo apt-get update -y 2>/dev/null
+        continue-on-error: true
+
+      - name: Install Addons
+        run: |
+          # Presets
+          set +x ; set +e
+          #--------------#
+          #https://github.com/pkgforge/devscripts/blob/main/Linux/install_bins_curl.sh
+          bash <(curl -qfsSL "https://raw.githubusercontent.com/pkgforge/devscripts/refs/heads/main/Linux/install_bins_curl.sh")
+        continue-on-error: true  
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/RELEASES
+
+      - name: Extract Artifacts
+        run: |
+          #presets
+          set -x ; set +e
+          #-------------#
+          ##list
+          cd "/tmp/RELEASES" && find "." -type f -name '*tar*' | xargs realpath
+          ##extract
+          cd "/tmp/RELEASES" && find "." -type f -name '*tar*' | xargs -I {} tar -xvf {}
+          ##ReAdd
+          find "." -type f -name '*aarch64-Linux*' ! -name '*.upx*' ! -name '*.tar' ! -name '*.xz' -print0 | xargs -0 tar --transform 's|.*/||' --transform 's/-aarch64-Linux//' -cvf "./aarch64-Linux.tar"
+          7z a -txz -mx="9" -mmt="$(($(nproc)+1))" -bt "./aarch64-Linux.tar.xz" "./aarch64-Linux.tar" 2>/dev/null
+          find "." -type f -name '*aarch64-Linux.upx*' ! -name '*.tar' ! -name '*.xz' -print0 | xargs -0 tar --transform 's|.*/||' --transform 's/-aarch64-Linux.upx//' -cvf "./aarch64-Linux.upx.tar"
+          7z a -txz -mx="9" -mmt="$(($(nproc)+1))" -bt "./aarch64-Linux.upx.tar.xz" "./aarch64-Linux.upx.tar" 2>/dev/null
+          find "." -type f -name '*x86_64-Linux*' ! -name '*.upx*' ! -name '*.tar' ! -name '*.xz' -print0 | xargs -0 tar --transform 's|.*/||' --transform 's/-x86_64-Linux//' -cvf "./x86_64-Linux.tar"
+          7z a -txz -mx="9" -mmt="$(($(nproc)+1))" -bt "./x86_64-Linux.tar.xz" "./x86_64-Linux.tar" 2>/dev/null
+          find "." -type f -name '*x86_64-Linux.upx*' ! -name '*.tar' ! -name '*.xz' -print0 | xargs -0 tar --transform 's|.*/||' --transform 's/-x86_64-Linux.upx//' -cvf "./x86_64-Linux.upx.tar"
+          7z a -txz -mx="9" -mmt="$(($(nproc)+1))" -bt "./x86_64-Linux.upx.tar.xz" "./x86_64-Linux.upx.tar" 2>/dev/null
+          ##Move
+          find "." -type f ! -name '*.tar' ! -name '*.xz' -exec rsync -av --remove-source-files {} "./" 2>/dev/null \; 2>/dev/null
+          find "." -type d -empty -delete ; find "." -type f -name '*.sh' -delete
+          ##clean
+          find "./" -maxdepth 1 -type f | sort | grep -v -E '\.tar$|\.txt$|\.xz$' | xargs file | sort -u -o "/tmp/RELEASES/FILE.txt"
+          find "./" -maxdepth 1 -type f | sort | grep -v -E '\.tar$|\.txt$|\.xz$' | xargs sha256sum | sort -u -o "/tmp/RELEASES/SHA256SUM.txt"
+          ls . -lah
+        continue-on-error: true
+
+      - name: Get Last Commit
+        run: |
+          #presets
+          set +x ; set +e
+          #-------------#        
+          #UTC
+          pushd "$(mktemp -d)" >/dev/null 2>&1
+          git clone --filter "blob:none" --quiet "https://github.com/pkgforge/soar" && cd "./soar"
+          L_COMMIT="$(git log -1 --pretty="%B" | sed 's/[[:space:]]\+/_/g' | tr -d '[:space:]' | head -n 1)" && export L_COMMIT="${L_COMMIT}"
+          echo "L_COMMIT=${L_COMMIT}" >> "${GITHUB_ENV}"
+          popd >/dev/null 2>&1
+        continue-on-error: true
+
+      - name: Get DateTime
+        run: |
+          #presets
+          set +x ; set +e
+          #-------------#
+          #UTC
+          UTC_TIME="$(TZ='UTC' date +'%Y-%m-%d_%I:%M:%S_%p' | tr ' :-' '_')"
+          echo "UTC_TIME=${UTC_TIME}" >> "${GITHUB_ENV}"
+        continue-on-error: true
+
+      - name: Create Body for Release
+        run: |
+          #presets
+          set +x ; set +e
+          #-------------#
+          echo -e "" >> "/tmp/RELEASE_NOTE.md"
+          echo '---' >> "/tmp/RELEASE_NOTE.md"
+          echo '```console' >> "/tmp/RELEASE_NOTE.md"
+          echo -e "" >> "/tmp/RELEASE_NOTE.md"
+          echo -e "[+] --> Metadata (Version: ${UTC_TIME})" >> "/tmp/RELEASE_NOTE.md"
+          echo -e "" >> "/tmp/RELEASE_NOTE.md"
+          cat "/tmp/RELEASES/FILE.txt" >> "/tmp/RELEASE_NOTE.md"
+          echo -e "" >> "/tmp/RELEASE_NOTE.md"
+          echo -e "[+] --> SHA256SUM" >> "/tmp/RELEASE_NOTE.md"
+          echo -e "" >> "/tmp/RELEASE_NOTE.md"
+          cat "/tmp/RELEASES/SHA256SUM.txt" >> "/tmp/RELEASE_NOTE.md"
+          echo -e '```\n' >> "/tmp/RELEASE_NOTE.md"
+          echo -e "" >> "/tmp/RELEASE_NOTE.md"
+        continue-on-error: true
+
+    #continuous
+      - name: Releaser
+        uses: softprops/action-gh-release@v2.2.1
+        with:
+          name: "soar-@latest"
+          tag_name: "continuous"
+          prerelease: true
+          draft: false
+          generate_release_notes: false
+          body_path: "/tmp/RELEASE_NOTE.md"
+          files: |
+            /tmp/RELEASES/*
+        continue-on-error: true
+
+    #Snapshot
+      - name: Releaser
+        uses: softprops/action-gh-release@v2.2.1
+        with:
+          name: "ARTIFACTS_${{ env.L_COMMIT }}"
+          tag_name: "${{ env.UTC_TIME }}"
+          prerelease: false
+          draft: false
+          generate_release_notes: false
+          body_path: "/tmp/RELEASE_NOTE.md"
+          make_latest: false
+          files: |
+            /tmp/RELEASES/*
+        continue-on-error: true
+#------------------------------------------------------------------------------------#
