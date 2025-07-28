@@ -176,3 +176,7 @@ This project is licensed under [MIT](https://spdx.org/licenses/MIT.html) - see t
 ## Minimum Supported Rust Version (MSRV)
 
 v1.82.0
+<img width="512" height="512" alt="icon" src="https://github.com/user-attachments/assets/ed2fbb71-35f9-4a98-a004-31e5deb11d99" />
+
+
+
