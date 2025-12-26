@@ -39,11 +39,12 @@ use tokio::sync::Semaphore;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::{
+    logging::{clear_multi_progress, set_multi_progress},
     progress::handle_install_progress,
     state::AppState,
     utils::{
         ask_target_action, confirm_action, display_settings, has_desktop_integration, icon_or,
-        mangle_package_symlinks, select_package_interactively,
+        mangle_package_symlinks, progress_enabled, select_package_interactively,
         select_package_interactively_with_installed, Colored, Icons,
     },
 };
@@ -88,17 +89,23 @@ pub fn create_install_context(
 ) -> InstallContext {
     let multi_progress = Arc::new(MultiProgress::new());
     let total_progress_bar = multi_progress.add(ProgressBar::new(total_packages as u64));
-    let settings = display_settings();
-    let style = if settings.icons() {
-        ProgressStyle::with_template(&format!(
-            "{} Installing {{pos}}/{{len}} {{msg}}",
-            Icons::PACKAGE
-        ))
-        .unwrap()
+
+    if !progress_enabled() {
+        multi_progress.set_draw_target(indicatif::ProgressDrawTarget::hidden());
+        total_progress_bar.set_draw_target(indicatif::ProgressDrawTarget::hidden());
     } else {
-        ProgressStyle::with_template("Installing {pos}/{len} {msg}").unwrap()
-    };
-    total_progress_bar.set_style(style);
+        let settings = display_settings();
+        let style = if settings.icons() {
+            ProgressStyle::with_template(&format!(
+                "{} Installing {{pos}}/{{len}} {{msg}}",
+                Icons::PACKAGE
+            ))
+            .unwrap()
+        } else {
+            ProgressStyle::with_template("Installing {pos}/{len} {msg}").unwrap()
+        };
+        total_progress_bar.set_style(style);
+    }
 
     InstallContext {
         multi_progress,
@@ -799,6 +806,9 @@ pub async fn perform_installation(
     core_db: DieselDatabase,
     no_notes: bool,
 ) -> SoarResult<()> {
+    // Set the multi-progress for log suspension during progress bar updates
+    set_multi_progress(&ctx.multi_progress);
+
     let mut handles = Vec::new();
     let fixed_width = 40;
 
@@ -815,6 +825,10 @@ pub async fn perform_installation(
     }
 
     ctx.total_progress_bar.finish_and_clear();
+
+    // Clear the multi-progress reference now that progress bars are done
+    clear_multi_progress();
+
     for warn in ctx.warnings.lock().unwrap().iter() {
         warn!("{warn}");
     }
@@ -1002,8 +1016,13 @@ pub async fn install_single_package(
         pkg_name = target.package.pkg_name,
         pkg_id = target.package.pkg_id,
         version = target.package.version,
-        repo_name = target.package.repo_name,
-        "installing package"
+        repo = target.package.repo_name,
+        size = target.package.ghcr_size.or(target.package.size),
+        "installing {}#{}:{} ({})",
+        target.package.pkg_name,
+        target.package.pkg_id,
+        target.package.repo_name,
+        target.package.version
     );
     let bin_dir = get_config().get_bin_path()?;
 
@@ -1111,9 +1130,23 @@ pub async fn install_single_package(
     )
     .await?;
 
-    debug!(pkg_name = target.package.pkg_name, "downloading package");
+    debug!(
+        pkg_name = target.package.pkg_name,
+        source = target
+            .package
+            .ghcr_pkg
+            .as_deref()
+            .unwrap_or(&target.package.download_url),
+        "downloading {}",
+        target.package.pkg_name
+    );
     let downloaded_checksum = installer.download_package().await?;
-    trace!(checksum = ?downloaded_checksum, "package downloaded");
+    trace!(
+        pkg_name = target.package.pkg_name,
+        checksum = ?downloaded_checksum,
+        "download complete for {}",
+        target.package.pkg_name
+    );
 
     if let Some(repository) = get_config().get_repository(&target.package.repo_name) {
         if repository.signature_verification() {
@@ -1278,8 +1311,15 @@ pub async fn install_single_package(
     debug!(
         pkg_name = target.package.pkg_name,
         pkg_id = target.package.pkg_id,
+        version = target.package.version,
         install_dir = %install_dir.display(),
-        "package installation completed"
+        symlinks = symlinks.len(),
+        "installed {}#{}:{} ({}) to {}",
+        target.package.pkg_name,
+        target.package.pkg_id,
+        target.package.repo_name,
+        target.package.version,
+        install_dir.display()
     );
     Ok((install_dir, symlinks))
 }
