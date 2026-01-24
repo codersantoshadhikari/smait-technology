@@ -149,13 +149,13 @@ impl PlatformUrl {
 /// struct Item { id: u32 }
 ///
 /// // Attempts fallback first, then primary with token from "API_TOKEN" if needed.
-/// let result: Result<Vec<Item>, _> = fetch_with_fallback("/api/items", "https://primary.example.com", "https://fallback.example.com", "API_TOKEN");
+/// let result: Result<Vec<Item>, _> = fetch_with_fallback("/api/items", "https://primary.example.com", "https://fallback.example.com", ["API_TOKEN", "API_TOKEN_FALLBACK"]);
 /// ```
 pub fn fetch_with_fallback<T>(
     path: &str,
     primary: &str,
     fallback: &str,
-    token_env: &str,
+    token_env: [&str; 2],
 ) -> Result<Vec<T>, DownloadError>
 where
     T: serde::de::DeserializeOwned,
@@ -165,7 +165,7 @@ where
         let mut req = SHARED_AGENT.get(&url);
 
         if use_token {
-            if let Ok(token) = env::var(token_env) {
+            if let Ok(token) = env::var(token_env[0]).or_else(|_| env::var(token_env[1])) {
                 req = req.header(AUTHORIZATION, &format!("Bearer {}", token.trim()));
             }
         }
