@@ -777,7 +777,16 @@ async fn install_single_package(
     let install_dir = config
         .get_packages_path(target.profile.clone())?
         .join(format!("{}-{}-{}", pkg.pkg_name, pkg.pkg_id, dir_suffix));
-    let real_bin = install_dir.join(&pkg.pkg_name);
+    let main_binary_name = pkg
+        .provides
+        .as_ref()
+        .and_then(|p| {
+            p.iter()
+                .find(|p| !p.symlink_to_bin && p.name == pkg.pkg_name)
+        })
+        .map(|p| p.name.as_str())
+        .unwrap_or(&pkg.pkg_name);
+    let real_bin = install_dir.join(main_binary_name);
 
     let (
         unlinked,
@@ -880,10 +889,8 @@ async fn install_single_package(
                 stage: VerifyStage::Signature,
             });
 
-            let repository_path = repository.get_path()?;
-            let pubkey_file = repository_path.join("minisign.pub");
-            if pubkey_file.exists() {
-                verify_signatures(&pubkey_file, &install_dir)?;
+            if let Some(ref pubkey) = repository.pubkey {
+                verify_signatures(pubkey, &install_dir)?;
             } else {
                 warn!(
                     "{}#{} - Signature verification skipped as no pubkey was found.",
@@ -1018,19 +1025,9 @@ async fn install_single_package(
     Ok((install_dir, symlinks))
 }
 
-fn verify_signatures(pubkey_file: &Path, install_dir: &Path) -> SoarResult<()> {
-    let pubkey = PublicKey::from_base64(
-        fs::read_to_string(pubkey_file)
-            .with_context(|| format!("reading minisign key from {}", pubkey_file.display()))?
-            .trim(),
-    )
-    .map_err(|err| {
-        SoarError::Custom(format!(
-            "Failed to load public key from {}: {}",
-            pubkey_file.display(),
-            err
-        ))
-    })?;
+fn verify_signatures(pubkey_str: &str, install_dir: &Path) -> SoarResult<()> {
+    let pubkey = PublicKey::from_base64(pubkey_str.trim())
+        .map_err(|err| SoarError::Custom(format!("Failed to parse public key: {}", err)))?;
 
     let entries = fs::read_dir(install_dir)
         .with_context(|| format!("reading package directory {}", install_dir.display()))?;
