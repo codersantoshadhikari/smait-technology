@@ -81,6 +81,8 @@ pub struct InstalledPackageWithPortable {
     pub portable_config: Option<String>,
     pub portable_share: Option<String>,
     pub portable_cache: Option<String>,
+    pub download_url: Option<String>,
+    pub update_info: Option<String>,
 }
 
 impl From<(Package, Option<PortablePackage>)> for InstalledPackageWithPortable {
@@ -109,6 +111,8 @@ impl From<(Package, Option<PortablePackage>)> for InstalledPackageWithPortable {
             portable_config: portable.as_ref().and_then(|p| p.portable_config.clone()),
             portable_share: portable.as_ref().and_then(|p| p.portable_share.clone()),
             portable_cache: portable.as_ref().and_then(|p| p.portable_cache.clone()),
+            download_url: pkg.download_url,
+            update_info: pkg.update_info,
         }
     }
 }
@@ -788,6 +792,38 @@ impl CoreRepository {
             .filter(pinned_filter);
 
         diesel::delete(query).execute(conn)
+    }
+
+    /// Finds installs fetched from a given URL.
+    pub fn find_by_download_url(
+        conn: &mut SqliteConnection,
+        download_url: &str,
+    ) -> QueryResult<Vec<InstalledPackageWithPortable>> {
+        let results: Vec<(Package, Option<PortablePackage>)> = packages::table
+            .left_join(portable_package::table)
+            .filter(packages::download_url.eq(download_url))
+            .select((Package::as_select(), Option::<PortablePackage>::as_select()))
+            .load(conn)?;
+
+        Ok(results.into_iter().map(Into::into).collect())
+    }
+
+    /// Record where an install came from, so it can be checked again later.
+    ///
+    /// Only local and URL installs have anything to record: a repository
+    /// package is found again through its index.
+    pub fn set_install_source(
+        conn: &mut SqliteConnection,
+        id: i32,
+        download_url: Option<&str>,
+        update_info: Option<&str>,
+    ) -> QueryResult<usize> {
+        diesel::update(packages::table.filter(packages::id.eq(id)))
+            .set((
+                packages::download_url.eq(download_url),
+                packages::update_info.eq(update_info),
+            ))
+            .execute(conn)
     }
 
     /// Mark one installed row as the linked one, by its own id.

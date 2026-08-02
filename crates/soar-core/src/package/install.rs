@@ -39,7 +39,9 @@ use crate::{
     constants::INSTALL_MARKER_FILE,
     database::{connection::DieselDatabase, models::Package},
     error::{ErrorContext, SoarError},
-    package::{local::local_path_from_url, remove::remove_provide_symlinks},
+    package::{
+        local::local_path_from_url, remove::remove_provide_symlinks, update_info::UpdateInfo,
+    },
     utils::get_extract_dir,
     SoarResult,
 };
@@ -448,8 +450,21 @@ pub struct PackageInstaller {
     build: Option<BuildConfig>,
     sandbox: Option<SandboxConfig>,
     arch_map: Option<std::collections::HashMap<String, String>>,
+    zsync: Option<ZsyncSeed>,
     events: EventSinkHandle,
     op_id: OperationId,
+}
+
+/// A zsync feed and the installed copy to rebuild the new artifact from.
+///
+/// An AppImage release changes a fraction of a file measured in tens of
+/// megabytes, so the blocks the old copy already holds are worth reusing.
+#[derive(Clone, Debug)]
+pub struct ZsyncSeed {
+    /// URL of the zsync control file describing the new artifact.
+    pub url: String,
+    /// The installed artifact to take unchanged blocks from.
+    pub seed: PathBuf,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -471,6 +486,8 @@ pub struct InstallTarget {
     pub build: Option<BuildConfig>,
     pub sandbox: Option<SandboxConfig>,
     pub arch_map: Option<std::collections::HashMap<String, String>>,
+    /// Set when the new artifact can be rebuilt from the installed one.
+    pub zsync: Option<ZsyncSeed>,
 }
 
 impl PackageInstaller {
@@ -576,6 +593,8 @@ impl PackageInstaller {
                 unlinked: false,
                 provides: None,
                 install_patterns: Some(json!(globs)),
+                download_url: None,
+                update_info: None,
             };
 
             db.with_conn(|conn| CoreRepository::insert(conn, &new_package))?;
@@ -594,6 +613,7 @@ impl PackageInstaller {
             build: target.build.clone(),
             sandbox: target.sandbox.clone(),
             arch_map: target.arch_map.clone(),
+            zsync: target.zsync.clone(),
             events,
             op_id,
         })
@@ -1010,7 +1030,20 @@ impl PackageInstaller {
             // as an unusable compressed file.
             let should_extract = true;
 
-            let file_path = if let Some(local_src) = local_path_from_url(url) {
+            let file_path = if let Some(seed) = self.zsync.clone() {
+                trace!(
+                    url = seed.url,
+                    "rebuilding from the installed copy over zsync"
+                );
+                let callback = self.progress_callback.clone();
+                soar_dl::zsync::download(
+                    &seed.url,
+                    &seed.seed,
+                    output_path,
+                    callback.map(|cb| move |p| cb(p)),
+                )?;
+                output_path.to_path_buf()
+            } else if let Some(local_src) = local_path_from_url(url) {
                 trace!(source = %local_src.display(), "installing from local file");
                 self.copy_local_source(local_src, output_path, should_extract, &extract_dir)?
             } else {
@@ -1302,6 +1335,22 @@ impl PackageInstaller {
             ))
         })?;
 
+        // Only a local or URL install needs its source recorded; a repository
+        // package is found again through the index. The update feed lives in
+        // the artifact, which is in place by the time this runs.
+        if repo_name == "local" {
+            let artifact = self.install_dir.join(pkg_name);
+            let update_info = UpdateInfo::raw_from_artifact(&artifact);
+            self.db.with_conn(|conn| {
+                CoreRepository::set_install_source(
+                    conn,
+                    record_id,
+                    Some(package.download_url.as_str()),
+                    update_info.as_deref(),
+                )
+            })?;
+        }
+
         if portable.is_some()
             || portable_home.is_some()
             || portable_config.is_some()
@@ -1380,7 +1429,12 @@ impl PackageInstaller {
                     }
                     Ok(())
                 };
-                walk_dir(&self.config.get_desktop_path()?, &mut remove_action)?;
+                // A directory that was never created holds none of our links,
+                // which is not a reason to fail an install that worked.
+                let desktop_path = self.config.get_desktop_path()?;
+                if desktop_path.is_dir() {
+                    walk_dir(&desktop_path, &mut remove_action)?;
+                }
 
                 let mut remove_action = |path: &Path| -> FileSystemResult<()> {
                     if let Ok(real_path) = fs::read_link(path) {
@@ -1390,7 +1444,10 @@ impl PackageInstaller {
                     }
                     Ok(())
                 };
-                walk_dir(self.config.get_icons_path(), &mut remove_action)?;
+                let icons_path = self.config.get_icons_path();
+                if icons_path.is_dir() {
+                    walk_dir(&icons_path, &mut remove_action)?;
+                }
 
                 if let Some(ref provides) = alt_pkg.provides {
                     let bin_path = self.config.get_bin_path()?;

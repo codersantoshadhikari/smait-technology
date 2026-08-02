@@ -1,7 +1,7 @@
 use soar_core::{
     database::models::InstalledPackage,
     error::SoarError,
-    package::{query::PackageQuery, remove::PackageRemover},
+    package::{local::LocalPackage, query::PackageQuery, remove::PackageRemover, url::UrlPackage},
     SoarResult,
 };
 use soar_db::repository::core::{CoreRepository, SortDirection};
@@ -9,8 +9,9 @@ use soar_events::{RemoveStage, SoarEvent};
 use tracing::{debug, trace};
 
 use crate::{
-    progress::next_op_id, utils::get_package_hooks, FailedInfo, RemoveReport, RemoveResolveResult,
-    RemovedInfo, SoarContext,
+    progress::next_op_id,
+    utils::{get_package_hooks, installed_from_source},
+    FailedInfo, RemoveReport, RemoveResolveResult, RemovedInfo, SoarContext,
 };
 
 /// Resolve package queries into packages to remove.
@@ -32,6 +33,18 @@ pub fn resolve_removals(
     let mut results = Vec::with_capacity(packages.len());
 
     for package in packages {
+        // A package installed from a URL is named by that URL as readily as by
+        // the name derived from it, and the URL is what the caller has.
+        if UrlPackage::is_remote(package) || LocalPackage::is_local(package) {
+            let installed = installed_from_source(diesel_db, package)?;
+            if installed.is_empty() {
+                results.push(RemoveResolveResult::NotInstalled(package.clone()));
+            } else {
+                results.push(RemoveResolveResult::Resolved(installed));
+            }
+            continue;
+        }
+
         let query = PackageQuery::try_from(package.as_str())?;
 
         // --all flag: remove all installed variants matching the name
