@@ -4,10 +4,15 @@ use std::{
 };
 
 use ureq::{
+    config::IpFamily,
     http::{self, HeaderMap, Uri},
     typestate::{WithBody, WithoutBody},
     Agent, Proxy, RequestBuilder,
 };
+
+/// Bounds TCP connect and TLS handshake, so an unroutable address fails over to the next one
+/// instead of stalling forever.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Debug)]
 pub struct ClientConfig {
@@ -15,23 +20,27 @@ pub struct ClientConfig {
     pub headers: Option<HeaderMap>,
     pub proxy: Option<Proxy>,
     pub timeout: Option<Duration>,
+    pub ip_family: IpFamily,
 }
 
 impl Default for ClientConfig {
     /// Creates a default ClientConfig populated with sensible defaults for HTTP requests.
     ///
-    /// The default sets a user agent of "pkgforge/soar" and leaves proxy, headers, and timeout unset.
+    /// The default sets a user agent of "pkgforge/soar", allows both IPv4 and IPv6, and leaves
+    /// proxy, headers, and timeout unset.
     ///
     /// # Examples
     ///
     /// ```
     /// use soar_dl::http_client::ClientConfig;
+    /// use ureq::config::IpFamily;
     ///
     /// let cfg = ClientConfig::default();
     /// assert_eq!(cfg.user_agent.as_deref(), Some("pkgforge/soar"));
     /// assert!(cfg.proxy.is_none());
     /// assert!(cfg.headers.is_none());
     /// assert!(cfg.timeout.is_none());
+    /// assert_eq!(cfg.ip_family, IpFamily::Any);
     /// ```
     fn default() -> Self {
         Self {
@@ -39,6 +48,7 @@ impl Default for ClientConfig {
             proxy: None,
             headers: None,
             timeout: None,
+            ip_family: IpFamily::Any,
         }
     }
 }
@@ -47,7 +57,10 @@ impl ClientConfig {
     /// Builds an HTTP `Agent` configured from this `ClientConfig`.
     ///
     /// The returned `Agent` will incorporate the configured proxy, global timeout,
-    /// and user agent header (if present).
+    /// IP family, and user agent header (if present).
+    ///
+    /// When no proxy is set, the `ALL_PROXY`, `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`
+    /// environment variables are honored.
     ///
     /// # Examples
     ///
@@ -61,8 +74,13 @@ impl ClientConfig {
     /// ```
     pub fn build(&self) -> Agent {
         let mut config = ureq::Agent::config_builder()
-            .proxy(self.proxy.clone())
-            .timeout_global(self.timeout);
+            .timeout_global(self.timeout)
+            .timeout_connect(Some(CONNECT_TIMEOUT))
+            .ip_family(self.ip_family);
+
+        if self.proxy.is_some() {
+            config = config.proxy(self.proxy.clone());
+        }
 
         if let Some(user_agent) = &self.user_agent {
             config = config.user_agent(user_agent);
@@ -256,6 +274,7 @@ mod tests {
         assert!(config.proxy.is_none());
         assert!(config.headers.is_none());
         assert!(config.timeout.is_none());
+        assert_eq!(config.ip_family, IpFamily::Any);
     }
 
     #[test]
@@ -273,9 +292,47 @@ mod tests {
             proxy: None,
             headers: None,
             timeout: Some(Duration::from_secs(30)),
+            ip_family: IpFamily::Any,
         };
         let agent = config.build();
         let _ = agent;
+    }
+
+    #[test]
+    fn test_client_config_sets_connect_timeout() {
+        let agent = ClientConfig::default().build();
+        assert_eq!(agent.config().timeouts().connect, Some(CONNECT_TIMEOUT));
+    }
+
+    #[test]
+    fn test_client_config_without_proxy_falls_back_to_env() {
+        let agent = ClientConfig::default().build();
+        assert_eq!(
+            agent.config().proxy().is_some(),
+            Proxy::try_from_env().is_some()
+        );
+    }
+
+    #[test]
+    fn test_client_config_explicit_proxy_overrides_env() {
+        let config = ClientConfig {
+            proxy: Some(Proxy::new("http://127.0.0.1:8080").unwrap()),
+            ..Default::default()
+        };
+        let agent = config.build();
+        assert_eq!(agent.config().proxy().unwrap().port(), 8080);
+    }
+
+    #[test]
+    fn test_client_config_ip_family() {
+        for family in [IpFamily::Any, IpFamily::Ipv4Only, IpFamily::Ipv6Only] {
+            let config = ClientConfig {
+                ip_family: family,
+                ..Default::default()
+            };
+            let agent = config.build();
+            assert_eq!(agent.config().ip_family(), family);
+        }
     }
 
     #[test]

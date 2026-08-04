@@ -21,6 +21,8 @@ This page documents the global options that apply across soar commands, along wi
 | `--proxy` | `-P` | Set HTTP/HTTPS proxy server |
 | `--header` | `-H` | Add custom HTTP headers |
 | `--user-agent` | `-A` | Set custom User-Agent string |
+| `--ipv4` | `-4` | Connect over IPv4 only |
+| `--ipv6` | `-6` | Connect over IPv6 only |
 | `--system` | `-S` | Operate in system-wide mode (requires root) |
 
 ## Verbosity Control
@@ -107,6 +109,10 @@ soar --proxy http://proxy.example.com:8080 install python
 soar --proxy http://user:pass@proxy.example.com:8080 sync
 ```
 
+When this option is omitted, soar falls back to the `ALL_PROXY`, `HTTPS_PROXY` and `HTTP_PROXY`
+environment variables, honoring `NO_PROXY` for hosts that should bypass the proxy. Passing
+`--proxy` overrides all of them, including `NO_PROXY`.
+
 ### `--header` / `-H`
 
 Add custom HTTP headers.
@@ -123,6 +129,24 @@ Set a custom User-Agent string.
 ```bash
 soar --user-agent "MyApp/1.0" install python
 ```
+
+### `--ipv4` / `-4` and `--ipv6` / `-6`
+
+Restrict connections to a single address family. By default soar tries every address a host
+resolves to, in whatever order the system resolver returns them.
+
+These are useful on networks where one family is advertised but not actually routable. If a host
+publishes AAAA records and the network drops IPv6 traffic instead of rejecting it, soar waits out
+a 30 second connect timeout per address before moving on. Passing `-4` skips IPv6 addresses
+entirely.
+
+```bash
+soar -4 install soar
+soar --ipv4 sync
+```
+
+Both are filters rather than preferences, so `-4` fails with "host not found" on a host that
+publishes only AAAA records. The two options cannot be combined.
 
 ## System Mode
 
@@ -166,7 +190,10 @@ sudo soar --system install docker
 
 | Variable | Purpose | Example |
 |----------|---------|---------|
-| `HTTP_PROXY` | Set HTTP/HTTPS proxy | `export HTTP_PROXY=http://proxy:8080` |
+| `ALL_PROXY` | Set proxy for all schemes | `export ALL_PROXY=socks5://proxy:1080` |
+| `HTTPS_PROXY` | Set HTTPS proxy | `export HTTPS_PROXY=http://proxy:8080` |
+| `HTTP_PROXY` | Set HTTP proxy | `export HTTP_PROXY=http://proxy:8080` |
+| `NO_PROXY` | Hosts that bypass the proxy | `export NO_PROXY=localhost,*.internal` |
 | `SOAR_CONFIG` | Custom config file path | `export SOAR_CONFIG=/path/to/config.toml` |
 | `SOAR_PACKAGES_CONFIG` | Custom packages.toml path | `export SOAR_PACKAGES_CONFIG=/path/to/packages.toml` |
 | `NO_COLOR` | Disable colored output | `export NO_COLOR=1` |
