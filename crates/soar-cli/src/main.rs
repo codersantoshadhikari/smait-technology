@@ -143,6 +143,7 @@ fn requires_root(command: &cli::Commands) -> bool {
             | cli::Commands::Clean { .. }
             | cli::Commands::Url { .. }
             | cli::Commands::DefConfig { .. }
+            | cli::Commands::DefPackages
             | cli::Commands::Update {
                 check: false,
                 ..
@@ -605,8 +606,18 @@ async fn handle_cli() -> SoarResult<()> {
                     yes,
                     packages_config,
                     no_verify,
+                    only_system,
                 } => {
-                    apply_packages(&ctx, prune, dry_run, yes, packages_config, no_verify).await?;
+                    apply_packages(
+                        &ctx,
+                        prune,
+                        dry_run,
+                        yes,
+                        packages_config,
+                        no_verify,
+                        only_system,
+                    )
+                    .await?;
                 }
                 cli::Commands::DefPackages => {
                     soar_config::packages::generate_default_packages_config()?;

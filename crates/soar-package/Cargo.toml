@@ -1,6 +1,6 @@
 [package]
 name = "soar-package"
-version = "0.5.2"
+version = "0.6.0"
 description = "Package format handling for soar package manager"
 edition.workspace = true
 readme.workspace = true
@@ -21,3 +21,6 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 xxhash-rust = { workspace = true }
 zstd = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
