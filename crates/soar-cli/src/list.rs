@@ -35,7 +35,7 @@ pub async fn search_packages(
 
     if json_enabled() {
         let items: Vec<PackageJson> = result.packages.iter().map(Into::into).collect();
-        json_output::emit(&Listing::new(items, result.total_count));
+        json_output::emit(&Listing::new(items, result.total_count))?;
         return Ok(());
     }
 
@@ -143,7 +143,7 @@ pub async fn query_package(ctx: &SoarContext, query_str: String) -> SoarResult<(
     if json_enabled() {
         let items: Vec<PackageDetailJson> = packages.iter().map(Into::into).collect();
         let total = items.len();
-        json_output::emit(&Listing::new(items, total));
+        json_output::emit(&Listing::new(items, total))?;
         return Ok(());
     }
 
@@ -232,20 +232,6 @@ pub async fn query_package(ctx: &SoarContext, query_str: String) -> SoarResult<(
             builder.push_record([format!("{} Build Date", Icons::CALENDAR), date.clone()]);
         }
 
-        if let Some(ref log) = package.build_log {
-            builder.push_record([
-                format!("{} Build Log", Icons::LOG),
-                Colored(Blue, log).to_string(),
-            ]);
-        }
-
-        if let Some(ref script) = package.build_script {
-            builder.push_record([
-                format!("{} Build Script", Icons::SCRIPT),
-                Colored(Blue, script).to_string(),
-            ]);
-        }
-
         if let Some(ref blob) = package.ghcr_blob {
             builder.push_record([
                 format!("{} GHCR Blob", Icons::LINK),
@@ -290,8 +276,6 @@ pub async fn query_package(ctx: &SoarContext, query_str: String) -> SoarResult<(
             build_id = package.build_id,
             build_date = package.build_date,
             build_action = package.build_action,
-            build_log = package.build_log,
-            build_script = package.build_script,
             ghcr_blob = package.ghcr_blob,
             ghcr_pkg = package.ghcr_pkg,
             "\n{table}"
@@ -308,7 +292,7 @@ pub async fn list_packages(ctx: &SoarContext, repo_name: Option<String>) -> Soar
 
     if json_enabled() {
         let items: Vec<PackageJson> = result.packages.iter().map(Into::into).collect();
-        json_output::emit(&Listing::new(items, result.total));
+        json_output::emit(&Listing::new(items, result.total))?;
         return Ok(());
     }
 
@@ -412,7 +396,7 @@ pub async fn list_installed_packages(
 
     if json_enabled() {
         let items: Vec<InstalledJson> = result.packages.iter().map(Into::into).collect();
-        json_output::emit(&Listing::new(items, result.total_count));
+        json_output::emit(&Listing::new(items, result.total_count))?;
         return Ok(());
     }
 

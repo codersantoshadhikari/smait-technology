@@ -39,6 +39,7 @@ soar-package = { workspace = true }
 soar-registry = { workspace = true }
 soar-utils = { workspace = true }
 tabled = { workspace = true }
+tempfile = { workspace = true }
 terminal_size = { workspace = true }
 tokio = { workspace = true }
 toml = { workspace = true }
