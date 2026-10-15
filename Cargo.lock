@@ -2352,6 +2352,7 @@ dependencies = [
  "serde_json",
  "soar-registry",
  "soar-utils",
+ "tempfile",
  "thiserror",
  "tracing",
 ]
@@ -2441,6 +2442,7 @@ dependencies = [
  "soar-config",
  "soar-dl",
  "soar-utils",
+ "tempfile",
  "thiserror",
  "tracing",
  "ureq",
