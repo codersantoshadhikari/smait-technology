@@ -1000,6 +1000,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
+name = "httpdate"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
+
+[[package]]
 name = "hybrid-array"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1619,12 +1625,13 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "onelf-format"
-version = "0.4.2"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee838b4b4f4fdf2a9cb22efb0c0c4c967005f3e6f188ff78d57552aad67f0d17"
+checksum = "4b7633dcae535a4d007bff1a6f5eb3ee70e90caf48e91bc7a2dc5eaf28571b32"
 dependencies = [
  "blake3",
  "stipplefs",
+ "toml 1.1.8+spec-1.1.0",
  "xxhash-rust",
 ]
 
@@ -2349,6 +2356,8 @@ version = "0.13.0"
 dependencies = [
  "compak",
  "fast-glob",
+ "flate2",
+ "httpdate",
  "miette",
  "nix",
  "percent-encoding",
@@ -2414,7 +2423,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
- "xxhash-rust",
  "zstd 0.14.3",
 ]
 
@@ -2493,9 +2501,9 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "stipplefs"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38d707654ed031ec7cd2fdc264ad6c948e688025fdf9d19a3ca72f4c3d679e61"
+checksum = "dd7db3726a1eabef77083f4e1afaa94c5608cd90064a256977e421da8fbf4f07"
 dependencies = [
  "twox-hash",
  "zstd 0.14.3",
